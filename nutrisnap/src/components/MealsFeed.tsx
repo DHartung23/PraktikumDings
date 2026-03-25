@@ -142,13 +142,8 @@ function MealCard({ meal, dict, locale }: { meal: Meal, dict: Record<string, any
         const prompt = `
           Analyze this food image and provide a nutritional breakdown. 
           Respond entirely in ${targetLanguage}.
-          Return the output as a clean, raw JSON object with NO Markdown formatting (no \`\`\`json block) and NO extra text, having the exact following structure:
-          {
-            "foodItems": ["Item 1", "Item 2"],
-            "estimatedCalories": 500,
-            "macronutrients": { "protein": "20g", "carbs": "50g", "fat": "25g" },
-            "description": "A short, engaging description of the meal."
-          }
+          Return the output as a clean, raw JSON object.
+          IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
         `
 
         const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
@@ -159,7 +154,25 @@ function MealCard({ meal, dict, locale }: { meal: Meal, dict: Record<string, any
               role: 'user',
               parts: [{ text: prompt }, { inlineData: { data: base64Image, mimeType } }]
             }],
-            generationConfig: { responseMimeType: "application/json" }
+            generationConfig: { 
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  foodItems: { type: "ARRAY", items: { type: "STRING" } },
+                  estimatedCalories: { type: "INTEGER" },
+                  macronutrients: {
+                     type: "OBJECT",
+                     properties: {
+                       protein: { type: "INTEGER", description: "Total protein in grams" },
+                       carbs: { type: "INTEGER", description: "Total carbs in grams" },
+                       fat: { type: "INTEGER", description: "Total fat in grams" }
+                     }
+                  },
+                  description: { type: "STRING" }
+                }
+              }
+            }
           })
         })
 
@@ -239,15 +252,15 @@ function MealCard({ meal, dict, locale }: { meal: Meal, dict: Record<string, any
           <div className="mt-auto grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
             <div className="flex flex-col items-center justify-center p-2 text-emerald-700">
               <span className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-80">{dict.protein}</span>
-              <span className="font-semibold flex items-center text-sm"><Beef className="w-3.5 h-3.5 mr-1.5 opacity-70" />{analysis.macronutrients?.protein || `0${dict.g}`}</span>
+              <span className="font-semibold flex items-center text-sm text-center"><Beef className="w-3.5 h-3.5 mr-1.5 opacity-70" />{analysis.macronutrients?.protein ?? 0}{dict.g}</span>
             </div>
             <div className="flex flex-col items-center justify-center p-2 text-blue-700 border-x border-slate-100">
               <span className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-80">{dict.carbs}</span>
-              <span className="font-semibold flex items-center text-sm"><Wheat className="w-3.5 h-3.5 mr-1.5 opacity-70" />{analysis.macronutrients?.carbs || `0${dict.g}`}</span>
+              <span className="font-semibold flex items-center text-sm text-center"><Wheat className="w-3.5 h-3.5 mr-1.5 opacity-70" />{analysis.macronutrients?.carbs ?? 0}{dict.g}</span>
             </div>
             <div className="flex flex-col items-center justify-center p-2 text-amber-700">
               <span className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-80">{dict.fat}</span>
-              <span className="font-semibold flex items-center text-sm"><Droplet className="w-3.5 h-3.5 mr-1.5 opacity-70" />{analysis.macronutrients?.fat || `0${dict.g}`}</span>
+              <span className="font-semibold flex items-center text-sm text-center"><Droplet className="w-3.5 h-3.5 mr-1.5 opacity-70" />{analysis.macronutrients?.fat ?? 0}{dict.g}</span>
             </div>
           </div>
         </div>
@@ -280,6 +293,10 @@ function getMacroColors(type: 'kcal'|'protein'|'carbs'|'fat', actual: number, go
 }
 
 export default function MealsFeed({ meals, profile, stats, dict, locale }: { meals: Meal[], profile: Profile | null, stats: Stat[], dict: Record<string, any>, locale: string }) {
+  const [isAnalyzingAll, setIsAnalyzingAll] = useState(false)
+  const supabase = createClient()
+  const router = useRouter()
+
   if (!meals || meals.length === 0) {
     return (
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-200 shadow-sm text-slate-500">
@@ -287,6 +304,123 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
         <p className="text-sm">{dict.uploadStart}</p>
       </div>
     )
+  }
+
+  const allDrafts = meals.filter(m => !m.analysis_result)
+
+  const handleAnalyzeAll = async () => {
+    setIsAnalyzingAll(true)
+    try {
+      const apiKey = localStorage.getItem('gemini_api_key')
+
+      if (apiKey) {
+        const parts: any[] = []
+        for (const meal of allDrafts) {
+           const imgRes = await fetch(meal.image_url)
+           if (!imgRes.ok) throw new Error("Could not fetch image")
+           const blob = await imgRes.blob()
+           const reader = new FileReader()
+           const base64Image = await new Promise<string>((resolve) => {
+             reader.onloadend = () => {
+                const result = reader.result as string
+                resolve(result.split(',')[1])
+             }
+             reader.readAsDataURL(blob)
+           })
+           const mimeType = blob.type || 'image/jpeg'
+           parts.push({ inlineData: { data: base64Image, mimeType } })
+        }
+
+        const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
+        const prompt = `
+          I am providing you with ${allDrafts.length} food images in order.
+          Analyze each food image individually and provide a nutritional breakdown for each one.
+          Respond entirely in ${targetLanguage}.
+          Return the output as a clean, raw JSON ARRAY of exactly ${allDrafts.length} objects.
+          The objects MUST be in the exact same order as the images provided.
+          IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
+        `
+
+        parts.unshift({ text: prompt })
+
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              role: 'user',
+              parts: parts
+            }],
+            generationConfig: { 
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    foodItems: { type: "ARRAY", items: { type: "STRING" } },
+                    estimatedCalories: { type: "INTEGER" },
+                    macronutrients: {
+                       type: "OBJECT",
+                       properties: {
+                         protein: { type: "INTEGER", description: "Total protein in grams" },
+                         carbs: { type: "INTEGER", description: "Total carbs in grams" },
+                         fat: { type: "INTEGER", description: "Total fat in grams" }
+                       }
+                    },
+                    description: { type: "STRING" }
+                  }
+                }
+              }
+            }
+          })
+        })
+
+        if (!geminiRes.ok) throw new Error("Batch Gemini API Error")
+
+        const data = await geminiRes.json()
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!text) throw new Error("No response from AI")
+        
+        const newAnalyses = JSON.parse(text)
+        if (!Array.isArray(newAnalyses) || newAnalyses.length !== allDrafts.length) {
+            throw new Error("Invalid output format from AI")
+        }
+
+        for (let i = 0; i < allDrafts.length; i++) {
+            const meal = allDrafts[i]
+            const analysis = newAnalyses[i]
+            const { error: dbError } = await supabase
+              .from('meals')
+              .update({ analysis_result: analysis })
+              .eq('id', meal.id)
+            if (dbError) throw dbError
+        }
+
+      } else {
+        // Fallback server sequentially
+        for (const meal of allDrafts) {
+           const aiResponse = await fetch('/api/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ imageUrl: meal.image_url })
+           })
+           if (!aiResponse.ok) throw new Error(dict.aiError)
+           const newAnalysis = await aiResponse.json()
+           const { error: dbError } = await supabase
+             .from('meals')
+             .update({ analysis_result: newAnalysis })
+             .eq('id', meal.id)
+           if (dbError) throw dbError
+        }
+      }
+      router.refresh()
+    } catch(err: any) {
+      console.error(err)
+      alert(err.message || dict.aiError)
+    } finally {
+      setIsAnalyzingAll(false)
+    }
   }
 
   // Base TDEE without activity
@@ -302,6 +436,23 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
 
   return (
     <div className="space-y-12">
+      
+      {allDrafts.length > 1 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+          <div>
+            <h3 className="text-amber-900 font-bold">{dict.pendingAnalysis}</h3>
+            <p className="text-amber-700 text-sm">Du hast {allDrafts.length} Bilder, die noch nicht analysiert wurden.</p>
+          </div>
+          <button 
+            onClick={handleAnalyzeAll} 
+            disabled={isAnalyzingAll}
+            className="whitespace-nowrap w-full sm:w-auto px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl shadow-sm transition-colors flex items-center justify-center disabled:opacity-70"
+          >
+            {isAnalyzingAll ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{dict.analyzing}</> : dict.analyzeAll}
+          </button>
+        </div>
+      )}
+
       {Object.entries(groupedMeals).map(([isoDate, dayMeals]) => {
         // UI date string formatting
         const uiDateStr = new Date(isoDate).toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })

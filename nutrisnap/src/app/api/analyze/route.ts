@@ -29,39 +29,21 @@ export async function POST(req: Request) {
     const cookieStore = await cookies()
     const locale = cookieStore.get('NEXT_LOCALE')?.value || 'de'
     const languageMap: Record<string, string> = { de: 'German', en: 'English', ja: 'Japanese' }
-    const targetLanguage = languageMap[locale] || 'German'
-
+    const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
     const prompt = `
-      Analyze this food image and provide a nutritional breakdown. 
+      Analyze this food image and provide a nutritional breakdown.
       Respond entirely in ${targetLanguage}.
-      Return the output as a clean, raw JSON object with NO Markdown formatting (no \`\`\`json block) and NO extra text, having the exact following structure:
-      {
-        "foodItems": ["Item 1", "Item 2"],
-        "estimatedCalories": 500,
-        "macronutrients": {
-          "protein": "20g",
-          "carbs": "50g",
-          "fat": "25g"
-        },
-        "description": "A short, engaging description of the meal."
-      }
+      Return the output as a clean, raw JSON object.
+      IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
     `
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                data: finalBase64,
-                mimeType: finalMimeType
-              }
-            }
-          ]
-        }
+        { role: 'user', parts: [
+          { inlineData: { data: finalBase64, mimeType: finalMimeType } },
+          { text: prompt }
+        ] }
       ],
       config: {
         responseMimeType: "application/json",
