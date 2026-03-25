@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Flame, Beef, Droplet, Wheat, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Footprints } from 'lucide-react'
+import { Flame, Beef, Droplet, Wheat, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Footprints, Trash2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { calculateTDEE, calculateStepCalories, getMacroGoals } from '@/utils/tdee'
@@ -54,18 +54,101 @@ function MealCard({ meal, dict, locale }: { meal: any, dict: any, locale: string
 
   const dateOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }
   const timeStr = new Date(meal.created_at).toLocaleTimeString(locale, dateOptions)
+  
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    const confirmMsg = locale === 'en' ? 'Delete this meal?' : 'Mahlzeit wirklich löschen?'
+    if (!confirm(confirmMsg)) return;
+    
+    setIsDeleting(true)
+    try {
+      if (meal.image_url) {
+         const parts = meal.image_url.split('/food-images/')
+         if (parts.length === 2) {
+            const path = parts[1]
+            await supabase.storage.from('food-images').remove([path])
+         }
+      }
+      const { error } = await supabase.from('meals').delete().eq('id', meal.id)
+      if (error) throw error
+      router.refresh()
+    } catch(err) {
+      console.error(err)
+      alert("Error deleting meal")
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   const handleAnalyzeNow = async () => {
     setIsAnalyzing(true)
     try {
-      const aiResponse = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: meal.image_url })
-      })
+      let newAnalysis;
+      const apiKey = localStorage.getItem('gemini_api_key')
 
-      if (!aiResponse.ok) throw new Error(dict.aiError)
-      const newAnalysis = await aiResponse.json()
+      if (apiKey) {
+        // 1. Fetch image directly and convert to base64
+        const imgRes = await fetch(meal.image_url)
+        if (!imgRes.ok) throw new Error("Could not fetch image")
+        const blob = await imgRes.blob()
+        const reader = new FileReader()
+        
+        const base64Image = await new Promise<string>((resolve) => {
+          reader.onloadend = () => {
+             const result = reader.result as string
+             resolve(result.split(',')[1])
+          }
+          reader.readAsDataURL(blob)
+        })
+        const mimeType = blob.type || 'image/jpeg'
+
+        // 2. Call Gemini API directly from browser
+        const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
+        const prompt = `
+          Analyze this food image and provide a nutritional breakdown. 
+          Respond entirely in ${targetLanguage}.
+          Return the output as a clean, raw JSON object with NO Markdown formatting (no \`\`\`json block) and NO extra text, having the exact following structure:
+          {
+            "foodItems": ["Item 1", "Item 2"],
+            "estimatedCalories": 500,
+            "macronutrients": { "protein": "20g", "carbs": "50g", "fat": "25g" },
+            "description": "A short, engaging description of the meal."
+          }
+        `
+
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              role: 'user',
+              parts: [{ text: prompt }, { inlineData: { data: base64Image, mimeType } }]
+            }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        })
+
+        if (!geminiRes.ok) {
+           const errData = await geminiRes.json()
+           throw new Error(errData.error?.message || 'Gemini API Error')
+        }
+
+        const data = await geminiRes.json()
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!text) throw new Error("No response from AI")
+        newAnalysis = JSON.parse(text)
+      } else {
+        // Fallback to our server route
+        const aiResponse = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageUrl: meal.image_url })
+        })
+
+        if (!aiResponse.ok) throw new Error(dict.aiError)
+        newAnalysis = await aiResponse.json()
+      }
 
       const { error: dbError } = await supabase
         .from('meals')
@@ -74,9 +157,9 @@ function MealCard({ meal, dict, locale }: { meal: any, dict: any, locale: string
 
       if (dbError) throw dbError
       router.refresh()
-    } catch(err) {
+    } catch(err: any) {
       console.error(err)
-      alert(dict.aiError)
+      alert(err.message || dict.aiError)
     } finally {
       setIsAnalyzing(false)
     }
@@ -87,6 +170,14 @@ function MealCard({ meal, dict, locale }: { meal: any, dict: any, locale: string
       <div className="h-48 w-full bg-slate-100 relative overflow-hidden shrink-0 border-b border-slate-100">
         <img src={meal.image_url} alt="Meal" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-2 py-1 rounded">{timeStr}</div>
+        <button 
+          onClick={handleDelete}
+          disabled={isDeleting || isAnalyzing}
+          className="absolute top-2 left-2 bg-white/80 hover:bg-red-500 hover:text-white text-slate-600 backdrop-blur-sm p-1.5 rounded transition-colors disabled:opacity-50 shadow-sm"
+          title="Delete Meal"
+        >
+          {isDeleting ? <Loader2 className="w-4 h-4 animate-spin text-slate-800" /> : <Trash2 className="w-4 h-4" />}
+        </button>
       </div>
       {isDraft ? (
         <div className="p-6 flex-1 flex flex-col items-center justify-center text-center">

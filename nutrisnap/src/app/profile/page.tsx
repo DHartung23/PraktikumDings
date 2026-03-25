@@ -5,6 +5,7 @@ import { dictionaries, Locale } from '@/utils/i18n'
 import { calculateTDEE } from '@/utils/tdee'
 import { updateProfile, updatePassword } from './actions'
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
+import GeminiKeyManager from '@/components/GeminiKeyManager'
 
 // Helper to cleanly parse macro value
 function parseMacro(val: any): number {
@@ -153,6 +154,8 @@ export default async function ProfilePage() {
           </button>
         </form>
       </div>
+
+      <GeminiKeyManager />
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
         <h2 className="text-xl font-bold font-serif text-slate-800 mb-6">{dict.changePassword}</h2>

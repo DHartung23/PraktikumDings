@@ -1,11 +1,11 @@
 import Link from 'next/link'
-import { login, signup } from './actions'
+import { resetPasswordRequest } from '../actions'
 
 export const metadata = {
-  title: 'Login - NutriSnap AI',
+  title: 'Forgot Password - NutriSnap AI',
 }
 
-export default async function LoginPage({
+export default async function ForgotPasswordPage({
   searchParams,
 }: {
   searchParams: Promise<{ message: string }>
@@ -15,7 +15,7 @@ export default async function LoginPage({
   return (
     <div className="flex-1 flex flex-col w-full px-8 sm:max-w-md justify-center gap-2 m-auto min-h-screen">
       <Link
-        href="/"
+        href="/login"
         className="absolute left-8 top-8 py-2 px-4 rounded-md no-underline text-emerald-900 bg-white shadow hover:bg-emerald-50 flex items-center group text-sm font-medium transition-all"
       >
         <svg
@@ -32,11 +32,15 @@ export default async function LoginPage({
         >
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Back
+        Back to Login
       </Link>
 
       <div className="bg-white/80 backdrop-blur-md p-8 rounded-2xl shadow-xl border border-white/50 w-full mt-24">
-        <h1 className="text-3xl font-bold text-slate-800 mb-6 text-center">NutriSnap AI</h1>
+        <h1 className="text-2xl font-bold text-slate-800 mb-2 text-center">Reset Password</h1>
+        <p className="text-sm text-slate-500 text-center mb-6">
+          Enter your email address and we will send you a link to reset your password.
+        </p>
+
         <form className="flex-1 flex flex-col w-full justify-center gap-4 text-slate-700">
           <div>
             <label className="text-sm font-medium text-slate-600 block mb-1" htmlFor="email">
@@ -45,44 +49,21 @@ export default async function LoginPage({
             <input
               className="rounded-lg px-4 py-3 bg-white border border-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-shadow"
               name="email"
+              type="email"
               placeholder="you@example.com"
               required
             />
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-sm font-medium text-slate-600" htmlFor="password">
-                Password
-              </label>
-              <Link 
-                href="/login/forgot-password" 
-                className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
-              >
-                Passwort vergessen?
-              </Link>
-            </div>
-            <input
-              className="rounded-lg px-4 py-3 bg-white border border-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-shadow"
-              type="password"
-              name="password"
-              placeholder="••••••••"
-              required
-            />
-          </div>
-          <div className="mt-4 flex flex-col gap-3">
+          
+          <div className="mt-2 flex flex-col gap-3">
             <button
-              formAction={login}
+              formAction={resetPasswordRequest}
               className="bg-emerald-600 hover:bg-emerald-700 transition-colors rounded-lg px-4 py-3 text-white font-semibold text-lg"
             >
-              Sign In
-            </button>
-            <button
-              formAction={signup}
-              className="border-2 border-slate-200 hover:bg-slate-50 transition-colors rounded-lg px-4 py-3 text-slate-700 font-semibold text-lg"
-            >
-              Sign Up
+              Send Reset Link
             </button>
           </div>
+          
           {message && (
             <p className="mt-4 p-4 bg-emerald-50 text-emerald-800 text-center rounded-lg border border-emerald-100 font-medium">
               {message}

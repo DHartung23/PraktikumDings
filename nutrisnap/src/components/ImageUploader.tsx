@@ -27,9 +27,15 @@ export default function ImageUploader({ dict }: { dict: any }) {
   }
 
   const processFiles = (selectedFiles: FileList | File[]) => {
-    const validFiles = Array.from(selectedFiles).filter(f => f.type.startsWith('image/'))
+    // Relaxed MIME type checking: accept if it starts with image/ OR if it has a typical image extension, or just allow it if the type is empty (mobile browser quirk)
+    const validFiles = Array.from(selectedFiles).filter(f => {
+      const isImageMime = f.type.startsWith('image/')
+      const hasExtension = /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(f.name)
+      return isImageMime || hasExtension || f.type === ''
+    })
+    
     if (validFiles.length === 0) {
-      setError(dict.uploadError)
+      setError(dict.uploadError || "Bitte wähle ein gültiges Bild aus.")
       return
     }
     setError(null)
@@ -57,10 +63,11 @@ export default function ImageUploader({ dict }: { dict: any }) {
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault()
     if (e.target.files && e.target.files.length > 0) {
       processFiles(e.target.files)
     }
+    // Reset file input so that selecting the same file again triggers onChange
+    e.target.value = ''
   }
 
   const removeFile = (index: number) => {
@@ -126,26 +133,27 @@ export default function ImageUploader({ dict }: { dict: any }) {
     <div className="w-full max-w-2xl bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
       <h2 className="text-xl text-slate-800 font-semibold mb-4">{dict.logMeal}</h2>
       
-      <div 
-        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer mb-6 ${dragActive ? 'border-emerald-500 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-slate-50'}`}
+      <label 
+        htmlFor="meal-image-upload"
+        className={`block relative border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer mb-6 ${dragActive ? 'border-emerald-500 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-slate-50'}`}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
       >
         <input 
+          id="meal-image-upload"
           ref={inputRef}
           type="file" 
           accept="image/*" 
           multiple
           onChange={handleChange} 
-          className="hidden" 
+          className="sr-only" 
         />
         <UploadCloud className="mx-auto h-10 w-10 text-slate-400 mb-3" />
         <p className="text-slate-600 font-medium">{dict.dragDrop}</p>
         <p className="text-slate-500 text-sm mt-1">{dict.clickSelect}</p>
-      </div>
+      </label>
       
       {previewUrls.length > 0 && (
         <div className="space-y-4">
