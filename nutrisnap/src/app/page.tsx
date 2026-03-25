@@ -46,7 +46,7 @@ export default async function Index() {
 
       {/* Meals History */}
       <section className="w-full">
-        <h2 className="text-2xl font-bold text-slate-800 mb-6 font-serif">{dict.yourDiary}</h2>
+        <h2 className="text-3xl font-extrabold tracking-tight text-slate-800 mb-8">{dict.yourDiary}</h2>
         <MealsFeed 
             meals={meals || []} 
             profile={profile} 

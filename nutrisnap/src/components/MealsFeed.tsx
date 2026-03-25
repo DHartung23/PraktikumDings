@@ -7,7 +7,41 @@ import { useRouter } from 'next/navigation'
 import { calculateTDEE, calculateStepCalories, getMacroGoals } from '@/utils/tdee'
 import { saveDailySteps } from '@/app/profile/actions'
 
-function DailyStepsInput({ isoDate, initialSteps, dict }: { isoDate: string, initialSteps: number, dict: any }) {
+export interface AnalysisResult {
+  foodItems?: string[];
+  estimatedCalories?: string | number;
+  description?: string;
+  macronutrients?: {
+    protein?: string | number;
+    carbs?: string | number;
+    fat?: string | number;
+  };
+}
+
+export interface Meal {
+  id: string;
+  created_at: string;
+  user_id: string;
+  image_url: string;
+  analysis_result?: AnalysisResult | null;
+}
+
+export interface Profile {
+  id: string;
+  height: number;
+  weight: number;
+  age: number;
+  gender: string;
+}
+
+export interface Stat {
+  id: string;
+  date_str: string;
+  steps: number;
+  user_id: string;
+}
+
+function DailyStepsInput({ isoDate, initialSteps, dict }: { isoDate: string, initialSteps: number, dict: Record<string, any> }) {
   const [steps, setSteps] = useState(initialSteps)
   const [isSaving, setIsSaving] = useState(false)
   const [savedSteps, setSavedSteps] = useState(initialSteps)
@@ -43,7 +77,7 @@ function DailyStepsInput({ isoDate, initialSteps, dict }: { isoDate: string, ini
   )
 }
 
-function MealCard({ meal, dict, locale }: { meal: any, dict: any, locale: string }) {
+function MealCard({ meal, dict, locale }: { meal: Meal, dict: Record<string, any>, locale: string }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const analysis = meal.analysis_result
@@ -245,7 +279,7 @@ function getMacroColors(type: 'kcal'|'protein'|'carbs'|'fat', actual: number, go
   }
 }
 
-export default function MealsFeed({ meals, profile, stats, dict, locale }: { meals: any[], profile: any, stats: any[], dict: any, locale: string }) {
+export default function MealsFeed({ meals, profile, stats, dict, locale }: { meals: Meal[], profile: Profile | null, stats: Stat[], dict: Record<string, any>, locale: string }) {
   if (!meals || meals.length === 0) {
     return (
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-200 shadow-sm text-slate-500">
@@ -256,7 +290,7 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
   }
 
   // Base TDEE without activity
-  const baseTDEE = calculateTDEE(profile?.height, profile?.weight, profile?.age, profile?.gender)
+  const baseTDEE = calculateTDEE(profile?.height || 0, profile?.weight || 0, profile?.age || 0, profile?.gender || '')
 
   // Group by YYYY-MM-DD
   const groupedMeals = meals.reduce((acc, meal) => {
@@ -293,7 +327,7 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
         const stepKcal = calculateStepCalories(steps)
         const adjustedTDEE = baseTDEE + stepKcal
         
-        const goals = getMacroGoals(profile?.weight, baseTDEE, stepKcal)
+        const goals = getMacroGoals(profile?.weight || 0, baseTDEE, stepKcal)
         
         const netDifference = adjustedTDEE - totalKcal
         const isDeficit = netDifference > 0 && totalKcal > 0

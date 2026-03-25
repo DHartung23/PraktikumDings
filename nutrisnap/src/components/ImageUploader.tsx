@@ -5,7 +5,7 @@ import { UploadCloud, Loader2, Info, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
-export default function ImageUploader({ dict }: { dict: any }) {
+export default function ImageUploader({ dict }: { dict: Record<string, any> }) {
   const [dragActive, setDragActive] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
