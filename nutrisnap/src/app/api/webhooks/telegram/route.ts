@@ -128,7 +128,54 @@ export async function POST(req: Request) {
       }
    } else {
        if (!text.startsWith('/')) {
-           await sendMsg('Schick mir einfach ein Foto deines Essens (sogar mit Text als Beschreibung), um es sofort in dein Tagebuch zu tracken!')
+           await sendMsg('📝 Text-Eintrag erkannt! Analysiere Nährwerte...')
+           
+           try {
+               const geminiKey = profile?.gemini_api_key || process.env.GEMINI_API_KEY
+               if (!geminiKey) {
+                   await sendMsg('⚠️ Analysiere fehlgeschlagen! Für die automatische Analyse fehlt ein Gemini API Key.')
+                   return NextResponse.json({ ok: true })
+               }
+
+               const prompt = `
+                   Analyze this food description and provide a nutritional breakdown.
+                   Respond entirely in German.
+                   Return the output as a clean, raw JSON object.
+                   IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
+                   
+                   MEAL DESCRIPTION: "${text}"
+               `
+
+               const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+                   method: 'POST',
+                   headers: {'Content-Type': 'application/json'},
+                   body: JSON.stringify({
+                       contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                       generationConfig: { responseMimeType: "application/json" }
+                   })
+               })
+               
+               const aiData = await aiRes.json()
+               const textOutput = aiData.candidates?.[0]?.content?.parts?.[0]?.text
+               
+               if (textOutput) {
+                   const jsonResult = JSON.parse(textOutput)
+                   
+                   // Insert into meals table (no image)
+                   const { data: insertedMeal, error: insertError } = await supabase.from('meals').insert({ 
+                       user_id, 
+                       user_comment: text,
+                       analysis_result: jsonResult 
+                   }).select('id').single()
+                   
+                   if (insertError) throw insertError
+                   
+                   await sendMsg(`✅ Text-Eintrag gespeichert!\n\n🍴 ${jsonResult.foodItems?.join(', ') || 'Mahlzeit'}\n🔥 Kalorien: ${jsonResult.estimatedCalories} kcal\n🥩 Protein: ${jsonResult.macronutrients?.protein}g\n🍞 Carbs: ${jsonResult.macronutrients?.carbs}g\n🧈 Fett: ${jsonResult.macronutrients?.fat}g\n\n📝 ${jsonResult.description}`)
+               }
+           } catch (err: any) {
+               console.error(err)
+               await sendMsg(`❌ Ein interner Fehler ist aufgetreten: ${err.message}`)
+           }
        }
    }
 
