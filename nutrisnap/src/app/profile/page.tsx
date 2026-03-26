@@ -6,6 +6,7 @@ import { calculateTDEE } from '@/utils/tdee'
 import { updateProfile, updatePassword } from './actions'
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
 import GeminiKeyManager from '@/components/GeminiKeyManager'
+import MessengerManager from '@/components/MessengerManager'
 
 // Helper to cleanly parse macro value
 function parseMacro(val: any): number {
@@ -156,6 +157,8 @@ export default async function ProfilePage() {
       </div>
 
       <GeminiKeyManager />
+
+      <MessengerManager profile={profile} />
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
         <h2 className="text-xl font-bold font-serif text-slate-800 mb-6">{dict.changePassword}</h2>

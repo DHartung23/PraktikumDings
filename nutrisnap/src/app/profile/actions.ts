@@ -69,3 +69,24 @@ export async function saveDailySteps(dateStr: string, steps: number) {
   revalidatePath('/')
   return { success: true }
 }
+
+export async function generateConnectionCode() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString()
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ connection_code: code })
+    .eq('id', user.id)
+
+  if (error) {
+    console.error(error)
+    return null
+  }
+  
+  revalidatePath('/profile')
+  return code
+}

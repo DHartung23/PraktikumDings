@@ -6,7 +6,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 
 export async function POST(req: Request) {
   try {
-    const { base64Image, mimeType, imageUrl } = await req.json()
+    const { base64Image, mimeType, imageUrl, userContext } = await req.json()
 
     let finalBase64 = base64Image
     let finalMimeType = mimeType || 'image/jpeg'
@@ -30,11 +30,13 @@ export async function POST(req: Request) {
     const locale = cookieStore.get('NEXT_LOCALE')?.value || 'de'
     const languageMap: Record<string, string> = { de: 'German', en: 'English', ja: 'Japanese' }
     const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
+    const contextStr = userContext ? `\n\nUSER INSTRUCTIONS FOR THIS MEAL: "${userContext}". Please mathematically adjust your calorie and macronutrient estimations based exactly on this context!` : ''
+    
     const prompt = `
       Analyze this food image and provide a nutritional breakdown.
       Respond entirely in ${targetLanguage}.
       Return the output as a clean, raw JSON object.
-      IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
+      IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${contextStr}
     `
 
     const response = await ai.models.generateContent({
