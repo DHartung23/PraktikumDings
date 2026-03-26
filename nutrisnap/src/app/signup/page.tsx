@@ -4,8 +4,29 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { signup } from '@/app/login/actions'
 import { ArrowLeft, Loader2, ChevronRight, User, Mail, Lock, Scale, Ruler } from 'lucide-react'
+import { useFormStatus } from 'react-dom'
 
 import { use } from 'react'
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="mt-6 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] transition-all rounded-2xl py-4 text-white font-bold text-xl shadow-lg shadow-emerald-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100"
+    >
+      {pending ? (
+        <Loader2 className="w-6 h-6 animate-spin" />
+      ) : (
+        <>
+          Konto erstellen
+          <ChevronRight className="w-6 h-6" />
+        </>
+      )}
+    </button>
+  )
+}
 
 export default function SignupPage({ 
   searchParams 
@@ -13,37 +34,21 @@ export default function SignupPage({
   searchParams: Promise<{ message?: string }> 
 }) {
   const params = use(searchParams)
-  const [isPending, setIsPending] = useState(false)
   const [clientError, setClientError] = useState<string | null>(null)
   
   const displayError = clientError || params.message
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setIsPending(true)
+  const handleAction = async (formData: FormData) => {
     setClientError(null)
-
-    const formData = new FormData(e.currentTarget)
-    
-    // Client-side validation for passwords
     const password = formData.get('password') as string
     const passwordConfirm = formData.get('password_confirm') as string
     
     if (password !== passwordConfirm) {
       setClientError('Passwörter stimmen nicht überein')
-      setIsPending(false)
       return
     }
 
-    try {
-      setClientError(null)
-      // We still use the signup action from login/actions.ts but we'll update it to handle extra fields
-      const result = await signup(formData)
-    } catch (err: any) {
-      setClientError(err.message || 'Ein Fehler ist aufgetreten')
-    } finally {
-      setIsPending(false)
-    }
+    await signup(formData)
   }
 
   return (
@@ -62,7 +67,7 @@ export default function SignupPage({
           <p className="text-slate-500 font-medium">Starte jetzt dein smartes Ernährungstagebuch</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5 text-slate-700">
+        <form action={handleAction} className="flex flex-col gap-5 text-slate-700">
           {/* Basis-Informationen */}
           <div className="grid grid-cols-1 gap-5">
             <div className="space-y-1.5">
@@ -175,20 +180,7 @@ export default function SignupPage({
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={isPending}
-            className="mt-6 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] transition-all rounded-2xl py-4 text-white font-bold text-xl shadow-lg shadow-emerald-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100"
-          >
-            {isPending ? (
-              <Loader2 className="w-6 h-6 animate-spin" />
-            ) : (
-              <>
-                Konto erstellen
-                <ChevronRight className="w-6 h-6" />
-              </>
-            )}
-          </button>
+          <SubmitButton />
 
           <p className="text-center text-slate-500 text-sm font-medium mt-4">
             Du hast bereits ein Konto?{' '}
