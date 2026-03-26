@@ -33,8 +33,9 @@ export async function middleware(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login')
   const isApiAuthRoute = request.nextUrl.pathname.startsWith('/auth')
+  const isWebhookRoute = request.nextUrl.pathname.startsWith('/api/webhooks')
   
-  if (!user && !isAuthRoute && !isApiAuthRoute) {
+  if (!user && !isAuthRoute && !isApiAuthRoute && !isWebhookRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
