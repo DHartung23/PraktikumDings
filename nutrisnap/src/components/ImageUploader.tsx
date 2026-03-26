@@ -75,8 +75,10 @@ export default function ImageUploader({ dict }: { dict: Record<string, any> }) {
     setPreviewUrls(previewUrls.filter((_, i) => i !== index))
   }
 
+  const [userContext, setUserContext] = useState('')
+
   const handleSave = async () => {
-    if (files.length === 0) return
+    if (files.length === 0 && userContext.trim() === '') return
     setIsUploading(true)
     setError(null)
     
@@ -84,41 +86,54 @@ export default function ImageUploader({ dict }: { dict: Record<string, any> }) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Upload sequentially or parallel
-      const uploadPromises = files.map(async (file) => {
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${user.id}/${Math.random()}.${fileExt}`
-        
-        const { error: uploadError } = await supabase.storage
-          .from('food-images')
-          .upload(fileName, file)
+      if (files.length > 0) {
+        // Upload images one by one
+        const uploadPromises = files.map(async (file) => {
+          const fileExt = file.name.split('.').pop()
+          const fileName = `${user.id}/${Math.random()}.${fileExt}`
           
-        if (uploadError) throw uploadError
+          const { error: uploadError } = await supabase.storage
+            .from('food-images')
+            .upload(fileName, file)
+            
+          if (uploadError) throw uploadError
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('food-images')
-          .getPublicUrl(fileName)
+          const { data: { publicUrl } } = supabase.storage
+            .from('food-images')
+            .getPublicUrl(fileName)
 
-        return publicUrl
-      })
-
-      const publicUrls = await Promise.all(uploadPromises)
-
-      // Insert all drafts directly into "meals" table without analysis
-      const insertPromises = publicUrls.map(url => {
-        return supabase.from('meals').insert({
-          user_id: user.id,
-          image_url: url,
-          analysis_result: null, // Indicates draft/pending analysis
+          return publicUrl
         })
-      })
 
-      const results = await Promise.all(insertPromises)
-      const hasError = results.find(r => r.error)
-      if (hasError) throw hasError.error
+        const publicUrls = await Promise.all(uploadPromises)
+
+        // Insert all drafts directly into "meals" table
+        const insertPromises = publicUrls.map(url => {
+          return supabase.from('meals').insert({
+            user_id: user.id,
+            image_url: url,
+            user_comment: userContext.trim() || null,
+            analysis_result: null, 
+          })
+        })
+
+        const results = await Promise.all(insertPromises)
+        const hasError = results.find(r => r.error)
+        if (hasError) throw hasError.error
+      } else {
+        // Text-only entry
+        const { error: insertError } = await supabase.from('meals').insert({
+          user_id: user.id,
+          user_comment: userContext.trim(),
+          analysis_result: null, // Force analysis later or trigger now?
+          // For consistency with the current UI flow, we'll save it as a draft.
+        })
+        if (insertError) throw insertError
+      }
 
       setFiles([])
       setPreviewUrls([])
+      setUserContext('')
       router.refresh()
       
     } catch (err: any) {
@@ -133,6 +148,18 @@ export default function ImageUploader({ dict }: { dict: Record<string, any> }) {
     <div className="w-full max-w-2xl bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
       <h2 className="text-xl text-slate-800 font-semibold mb-4">{dict.logMeal}</h2>
       
+      <div className="space-y-2 mb-6">
+        <label className="text-sm font-medium text-slate-700">
+          {dict.mealDescription || "Beschreibung (optional oder für Nur-Text-Eintrag)"}
+        </label>
+        <textarea
+          value={userContext}
+          onChange={(e) => setUserContext(e.target.value)}
+          placeholder={dict.descriptionPlaceholder || "z.B. Tempura Soba zum Mittagessen..."}
+          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none min-h-[100px] resize-none text-slate-600"
+        />
+      </div>
+
       <label 
         htmlFor="meal-image-upload"
         className={`block relative border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer mb-6 ${dragActive ? 'border-emerald-500 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-slate-50'}`}
@@ -155,26 +182,28 @@ export default function ImageUploader({ dict }: { dict: Record<string, any> }) {
         <p className="text-slate-500 text-sm mt-1">{dict.clickSelect}</p>
       </label>
       
-      {previewUrls.length > 0 && (
+      {(previewUrls.length > 0 || userContext.trim() !== '') && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {previewUrls.map((url, index) => (
-              <div key={index} className="relative rounded-lg overflow-hidden bg-slate-100 aspect-square group border border-slate-200 shadow-sm">
-                <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover" />
-                <button 
-                  onClick={() => removeFile(index)} 
-                  disabled={isUploading}
-                  className="absolute top-2 right-2 bg-black/60 hover:bg-black text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity disabled:hidden"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
+          {previewUrls.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {previewUrls.map((url, index) => (
+                <div key={index} className="relative rounded-lg overflow-hidden bg-slate-100 aspect-square group border border-slate-200 shadow-sm">
+                  <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover" />
+                  <button 
+                    onClick={() => removeFile(index)} 
+                    disabled={isUploading}
+                    className="absolute top-2 right-2 bg-black/60 hover:bg-black text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity disabled:hidden"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           
           <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
             <button 
-              onClick={() => { setFiles([]); setPreviewUrls([]) }}
+              onClick={() => { setFiles([]); setPreviewUrls([]); setUserContext('') }}
               disabled={isUploading}
               className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
             >
@@ -182,7 +211,7 @@ export default function ImageUploader({ dict }: { dict: Record<string, any> }) {
             </button>
             <button 
               onClick={handleSave}
-              disabled={isUploading}
+              disabled={isUploading || (files.length === 0 && userContext.trim() === '')}
               className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg shadow-sm transition-colors flex items-center disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isUploading ? (
@@ -190,7 +219,11 @@ export default function ImageUploader({ dict }: { dict: Record<string, any> }) {
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                   {dict.saving}
                 </>
-              ) : `${dict.saveImages} (${files.length})`}
+              ) : (
+                <>
+                  {files.length > 0 ? `${dict.saveImages} (${files.length})` : (dict.saveMeal || 'Speichern')}
+                </>
+              )}
             </button>
           </div>
         </div>
