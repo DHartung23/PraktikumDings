@@ -32,10 +32,11 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login')
+  const isSignupRoute = request.nextUrl.pathname.startsWith('/signup')
   const isApiAuthRoute = request.nextUrl.pathname.startsWith('/auth')
   const isWebhookRoute = request.nextUrl.pathname.startsWith('/api/webhooks')
   
-  if (!user && !isAuthRoute && !isApiAuthRoute && !isWebhookRoute) {
+  if (!user && !isAuthRoute && !isSignupRoute && !isApiAuthRoute && !isWebhookRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
