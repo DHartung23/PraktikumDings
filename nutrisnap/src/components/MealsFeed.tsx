@@ -22,7 +22,7 @@ export interface Meal {
   id: string;
   created_at: string;
   user_id: string;
-  image_url: string;
+  image_url: string | null;
   user_comment?: string | null;
   analysis_result?: AnalysisResult | null;
 }
@@ -116,39 +116,54 @@ function MealCard({ meal, dict, locale, isSelected, onToggleSelect }: { meal: Me
       const apiKey = localStorage.getItem('gemini_api_key')
 
       if (apiKey) {
-        // 1. Fetch image directly and convert to base64
-        const imgRes = await fetch(meal.image_url)
-        if (!imgRes.ok) throw new Error("Could not fetch image")
-        const blob = await imgRes.blob()
-        const reader = new FileReader()
+        let base64Image = null
+        let mimeType = 'image/jpeg'
 
-        const base64Image = await new Promise<string>((resolve) => {
-          reader.onloadend = () => {
-            const result = reader.result as string
-            resolve(result.split(',')[1])
-          }
-          reader.readAsDataURL(blob)
-        })
-        const mimeType = blob.type || 'image/jpeg'
+        if (meal.image_url) {
+          // 1. Fetch image directly and convert to base64
+          const imgRes = await fetch(meal.image_url)
+          if (!imgRes.ok) throw new Error("Could not fetch image")
+          const blob = await imgRes.blob()
+          const reader = new FileReader()
+
+          base64Image = await new Promise<string>((resolve) => {
+            reader.onloadend = () => {
+              const result = reader.result as string
+              resolve(result.split(',')[1])
+            }
+            reader.readAsDataURL(blob)
+          })
+          mimeType = blob.type || 'image/jpeg'
+        }
 
         // 2. Call Gemini API directly from browser
         const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
-        const userContext = meal.user_comment ? `\n\nUSER INSTRUCTIONS FOR THIS MEAL: "${meal.user_comment}". Please mathematically adjust your calorie and macronutrient estimations based exactly on this context!` : ''
+        const userContext = meal.user_comment ? `\n\nUSER INSTRUCTIONS/DESCRIPTION: "${meal.user_comment}". Please mathematically adjust your calorie and macronutrient estimations based exactly on this context!` : ''
         
-        const prompt = `
-          Analyze this food image and provide a nutritional breakdown. 
-          Respond entirely in ${targetLanguage}.
-          Return the output as a clean, raw JSON object.
-          IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${userContext}
-        `
+        const prompt = meal.image_url 
+          ? `Analyze this food image and provide a nutritional breakdown. 
+             Respond entirely in ${targetLanguage}.
+             Return the output as a clean, raw JSON object.
+             IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${userContext}`
+          : `Analyze this food description and provide a nutritional breakdown.
+             Respond entirely in ${targetLanguage}.
+             Return the output as a clean, raw JSON object.
+             IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
+             
+             DESCRIPTION: "${meal.user_comment}"`
+        
+        const parts: any[] = [{ text: prompt }]
+        if (base64Image) {
+          parts.push({ inlineData: { data: base64Image, mimeType } })
+        }
 
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{
               role: 'user',
-              parts: [{ text: prompt }, { inlineData: { data: base64Image, mimeType } }]
+              parts: parts
             }],
             generationConfig: {
               responseMimeType: "application/json",
@@ -210,17 +225,32 @@ function MealCard({ meal, dict, locale, isSelected, onToggleSelect }: { meal: Me
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border ${isDraft ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200'} overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-300`}>
-      <div className="h-48 w-full bg-slate-100 relative overflow-hidden shrink-0 border-b border-slate-100">
-        <img src={meal.image_url} alt="Meal" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
-        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-2 py-1 rounded">{timeStr}</div>
-        <button
-          onClick={() => onToggleSelect(meal.id)}
-          className={`absolute top-2 left-2 p-1.5 rounded-full transition-all shadow-sm ${isSelected ? 'bg-emerald-500 text-white' : 'bg-white/90 text-slate-400 hover:text-slate-700 backdrop-blur-sm'}`}
-          title="Select Meal"
-        >
-          {isSelected ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
-        </button>
-      </div>
+      {meal.image_url ? (
+        <div className="h-48 w-full bg-slate-100 relative overflow-hidden shrink-0 border-b border-slate-100">
+          <img src={meal.image_url} alt="Meal" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
+          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-2 py-1 rounded">{timeStr}</div>
+          <button
+            onClick={() => onToggleSelect(meal.id)}
+            className={`absolute top-2 left-2 p-1.5 rounded-full transition-all shadow-sm ${isSelected ? 'bg-emerald-500 text-white' : 'bg-white/90 text-slate-400 hover:text-slate-700 backdrop-blur-sm'}`}
+            title="Select Meal"
+          >
+            {isSelected ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+          </button>
+        </div>
+      ) : (
+        <div className="h-48 w-full bg-slate-50 relative overflow-hidden shrink-0 border-b border-slate-100 flex flex-col items-center justify-center text-slate-400 gap-2">
+           <div className="bg-white p-3 rounded-full shadow-sm border border-slate-100"><MessageSquare className="w-8 h-8 opacity-50" /></div>
+           <span className="text-xs font-medium uppercase tracking-wider">{locale === 'en' ? 'Text Entry' : 'Text-Eintrag'}</span>
+           <div className="absolute top-2 right-2 bg-black/5 text-slate-400 text-xs font-semibold px-2 py-1 rounded">{timeStr}</div>
+           <button
+            onClick={() => onToggleSelect(meal.id)}
+            className={`absolute top-2 left-2 p-1.5 rounded-full transition-all shadow-sm ${isSelected ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 hover:text-slate-700 backdrop-blur-sm border border-slate-100'}`}
+            title="Select Meal"
+          >
+            {isSelected ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+          </button>
+        </div>
+      )}
       
       {/* User Comment Section / AI Context */}
       <div className="px-5 pt-4 w-full">
@@ -389,19 +419,29 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
       if (apiKey) {
         const parts: any[] = []
         for (const meal of allDrafts) {
-          const imgRes = await fetch(meal.image_url)
-          if (!imgRes.ok) throw new Error("Could not fetch image")
-          const blob = await imgRes.blob()
-          const reader = new FileReader()
-          const base64Image = await new Promise<string>((resolve) => {
-            reader.onloadend = () => {
-              const result = reader.result as string
-              resolve(result.split(',')[1])
-            }
-            reader.readAsDataURL(blob)
-          })
-          const mimeType = blob.type || 'image/jpeg'
-          parts.push({ inlineData: { data: base64Image, mimeType } })
+          if (meal.image_url) {
+            const imgRes = await fetch(meal.image_url)
+            if (!imgRes.ok) throw new Error("Could not fetch image")
+            const blob = await imgRes.blob()
+            const reader = new FileReader()
+            const base64Image = await new Promise<string>((resolve) => {
+              reader.onloadend = () => {
+                const result = reader.result as string
+                resolve(result.split(',')[1])
+              }
+              reader.readAsDataURL(blob)
+            })
+            const mimeType = blob.type || 'image/jpeg'
+            parts.push({ inlineData: { data: base64Image, mimeType } })
+          } else {
+            // Placeholder for text-only meal in the parts sequence (Gemini needs order)
+            // Actually, if we use a single prompt with all descriptions, we don't need parts per image.
+            // But the current batch logic sends one image per part.
+            // For text-only meals in a batch, we can send a part that just says "This meal is a text-only description: [text]"
+            // However, the current prompt says "Analyzing [allDrafts.length] food images in order".
+            // Let's refine the batch prompt to support both.
+            parts.push({ text: `(Mahlzeit ohne Bild: "${meal.user_comment}")` })
+          }
         }
 
         const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
@@ -480,7 +520,7 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
           const aiResponse = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageUrl: meal.image_url })
+            body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
           })
           if (!aiResponse.ok) throw new Error(dict.aiError)
           const newAnalysis = await aiResponse.json()
