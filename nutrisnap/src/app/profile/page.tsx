@@ -156,7 +156,7 @@ export default async function ProfilePage() {
         </form>
       </div>
 
-      <GeminiKeyManager />
+      <GeminiKeyManager initialKey={profile?.gemini_api_key || ''} />
 
       <MessengerManager profile={profile} />
 

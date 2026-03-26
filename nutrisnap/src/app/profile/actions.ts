@@ -13,15 +13,16 @@ export async function updateProfile(formData: FormData) {
   const weight = parseFloat(formData.get('weight') as string || '0')
   const age = parseInt(formData.get('age') as string || '0', 10)
   const gender = formData.get('gender') as string
+  const gemini_api_key = formData.get('gemini_api_key') as string
 
   const { error } = await supabase
     .from('profiles')
-    .update({ height, weight, age, gender })
+    .update({ height, weight, age, gender, gemini_api_key })
     .eq('id', user.id)
 
   if (error) {
     // fallback if profile was deleted
-    await supabase.from('profiles').insert({ id: user.id, height, weight, age, gender })
+    await supabase.from('profiles').insert({ id: user.id, height, weight, age, gender, gemini_api_key })
   }
 
   revalidatePath('/profile')

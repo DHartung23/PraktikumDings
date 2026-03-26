@@ -48,7 +48,7 @@ export async function POST(req: Request) {
    }
    
    // Gatekeeper: Check if messenger user is connected
-   const { data: profile } = await supabase.from('profiles').select('id').eq('telegram_chat_id', String(chatId)).single()
+   const { data: profile } = await supabase.from('profiles').select('id, gemini_api_key').eq('telegram_chat_id', String(chatId)).single()
    if (!profile) {
       await sendMsg('Dieser Chat ist noch nicht mit NutriSnap verknüpft. Bitte generiere einen Code in deinem Web-Profil und sende mir /connect [code].')
       return NextResponse.json({ ok: true })
@@ -93,9 +93,9 @@ export async function POST(req: Request) {
          await sendMsg('🕒 In der Datenbank gesichert! Analysiere Nährwerte über Vertex AI...')
          
          // Invoke Google Gemini remotely bypassing localhost origin domains
-         const geminiKey = process.env.GEMINI_API_KEY
+         const geminiKey = profile?.gemini_api_key || process.env.GEMINI_API_KEY
          if (!geminiKey) {
-             await sendMsg('⚠️ Bild gespeichert! Für die automatische Analyse fehlt jedoch der Server-Schlüssel GEMINI_API_KEY.')
+             await sendMsg('⚠️ Bild gespeichert! Für die automatische Analyse fehlt jedoch ein Gemini API Key (weder in deinem Profil noch auf dem Server hinterlegt).')
              return NextResponse.json({ ok: true })
          }
 

@@ -2,26 +2,57 @@
 
 import { useState, useEffect } from 'react'
 import { KeyRound, Check, Save } from 'lucide-react'
+import { updateProfile } from '@/app/profile/actions'
 
-export default function GeminiKeyManager() {
-  const [apiKey, setApiKey] = useState('')
+interface Props {
+  initialKey?: string
+}
+
+export default function GeminiKeyManager({ initialKey = '' }: Props) {
+  const [apiKey, setApiKey] = useState(initialKey)
   const [isSaved, setIsSaved] = useState(false)
+  const [isError, setIsError] = useState(false)
 
+  // Synchronize state if initialKey changes (e.g. on page load)
   useEffect(() => {
-    const savedKey = localStorage.getItem('gemini_api_key')
-    if (savedKey) {
-      setApiKey(savedKey)
+    if (initialKey) {
+      setApiKey(initialKey)
     }
-  }, [])
+  }, [initialKey])
 
-  const handleSave = () => {
-    if (apiKey.trim() === '') {
-      localStorage.removeItem('gemini_api_key')
-    } else {
-      localStorage.setItem('gemini_api_key', apiKey.trim())
+  const handleSave = async () => {
+    try {
+      setIsError(false)
+      const formData = new FormData()
+      formData.append('gemini_api_key', apiKey.trim())
+      
+      // We pass 0/empty for other fields to avoid overwriting with garbage, 
+      // but updateProfile currently updates all fields. 
+      // Ideally, we'd have a specific action for just the key.
+      // However, for now, we'll use a hidden form or a more specific action.
+      // Let's create a specific action in actions.ts for just the key to be clean.
+      
+      const res = await fetch('/api/profile/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gemini_api_key: apiKey.trim() })
+      })
+
+      if (!res.ok) throw new Error('Failed to save')
+
+      // Also update local storage for client-side analysis
+      if (apiKey.trim() === '') {
+        localStorage.removeItem('gemini_api_key')
+      } else {
+        localStorage.setItem('gemini_api_key', apiKey.trim())
+      }
+
+      setIsSaved(true)
+      setTimeout(() => setIsSaved(false), 2000)
+    } catch (err) {
+      console.error(err)
+      setIsError(true)
     }
-    setIsSaved(true)
-    setTimeout(() => setIsSaved(false), 2000)
   }
 
   return (
@@ -30,7 +61,7 @@ export default function GeminiKeyManager() {
         <div className="bg-indigo-100 p-2.5 rounded-xl">
           <KeyRound className="w-5 h-5 text-indigo-600" />
         </div>
-        <h2 className="text-xl font-bold font-serif text-slate-800">API Key Manager (Lokal)</h2>
+        <h2 className="text-xl font-bold font-serif text-slate-800">API Key Manager</h2>
       </div>
       
       <div className="space-y-4">
@@ -46,13 +77,13 @@ export default function GeminiKeyManager() {
              />
              <button 
                onClick={handleSave}
-               className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-sm transition-colors md:w-auto w-32 flex items-center justify-center"
+               className={`px-6 py-3 ${isError ? 'bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'} text-white font-semibold rounded-xl shadow-sm transition-colors md:w-auto w-32 flex items-center justify-center`}
              >
                {isSaved ? <Check className="w-5 h-5" /> : <Save className="w-5 h-5" />}
              </button>
           </div>
           <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-            Deine API-Schlüssel werden <strong>nur in deinem Browser (localStorage)</strong> gespeichert und niemals an unsere Datenbank gesendet. Dadurch ist die volle Sicherheit deiner Daten gewährleistet. Wenn dieser Key hinterlegt ist, wird das Server-Fallback ignoriert.
+            Deine API-Schlüssel werden sicher in deinem Profil gespeichert. Der Telegram-Bot nutzt diesen Key automatisch für deine Analysen.
           </p>
         </div>
       </div>
