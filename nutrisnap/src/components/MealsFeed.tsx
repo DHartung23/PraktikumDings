@@ -113,100 +113,15 @@ function MealCard({ meal, dict, locale, isSelected, onToggleSelect }: { meal: Me
     setIsAnalyzing(true)
     try {
       let newAnalysis;
-      const apiKey = localStorage.getItem('gemini_api_key')
+      // Use our server route for reliability (handles either fallback or personal keys potentially)
+      const aiResponse = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
+      })
 
-      if (apiKey) {
-        let base64Image = null
-        let mimeType = 'image/jpeg'
-
-        if (meal.image_url) {
-          // 1. Fetch image directly and convert to base64
-          const imgRes = await fetch(meal.image_url)
-          if (!imgRes.ok) throw new Error("Could not fetch image")
-          const blob = await imgRes.blob()
-          const reader = new FileReader()
-
-          base64Image = await new Promise<string>((resolve) => {
-            reader.onloadend = () => {
-              const result = reader.result as string
-              resolve(result.split(',')[1])
-            }
-            reader.readAsDataURL(blob)
-          })
-          mimeType = blob.type || 'image/jpeg'
-        }
-
-        // 2. Call Gemini API directly from browser
-        const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
-        const userContext = meal.user_comment ? `\n\nUSER INSTRUCTIONS/DESCRIPTION: "${meal.user_comment}". Please mathematically adjust your calorie and macronutrient estimations based exactly on this context!` : ''
-        
-        const prompt = meal.image_url 
-          ? `Analyze this food image and provide a nutritional breakdown. 
-             Respond entirely in ${targetLanguage}.
-             Return the output as a clean, raw JSON object.
-             IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${userContext}`
-          : `Analyze this food description and provide a nutritional breakdown.
-             Respond entirely in ${targetLanguage}.
-             Return the output as a clean, raw JSON object.
-             IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
-             
-             DESCRIPTION: "${meal.user_comment}"`
-        
-        const parts: any[] = [{ text: prompt }]
-        if (base64Image) {
-          parts.push({ inlineData: { data: base64Image, mimeType } })
-        }
-
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: parts
-            }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: "OBJECT",
-                properties: {
-                  foodItems: { type: "ARRAY", items: { type: "STRING" } },
-                  estimatedCalories: { type: "INTEGER" },
-                  macronutrients: {
-                    type: "OBJECT",
-                    properties: {
-                      protein: { type: "INTEGER", description: "Total protein in grams" },
-                      carbs: { type: "INTEGER", description: "Total carbs in grams" },
-                      fat: { type: "INTEGER", description: "Total fat in grams" }
-                    }
-                  },
-                  description: { type: "STRING" }
-                }
-              }
-            }
-          })
-        })
-
-        if (!geminiRes.ok) {
-          const errData = await geminiRes.json()
-          throw new Error(errData.error?.message || 'Gemini API Error')
-        }
-
-        const data = await geminiRes.json()
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!text) throw new Error("No response from AI")
-        newAnalysis = JSON.parse(text)
-      } else {
-        // Fallback to our server route
-        const aiResponse = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
-        })
-
-        if (!aiResponse.ok) throw new Error(dict.aiError)
-        newAnalysis = await aiResponse.json()
-      }
+      if (!aiResponse.ok) throw new Error(dict.aiError)
+      newAnalysis = await aiResponse.json()
 
       const { error: dbError } = await supabase
         .from('meals')
@@ -414,122 +329,20 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
   const handleAnalyzeAll = async () => {
     setIsAnalyzingAll(true)
     try {
-      const apiKey = localStorage.getItem('gemini_api_key')
-
-      if (apiKey) {
-        const parts: any[] = []
-        for (const meal of allDrafts) {
-          if (meal.image_url) {
-            const imgRes = await fetch(meal.image_url)
-            if (!imgRes.ok) throw new Error("Could not fetch image")
-            const blob = await imgRes.blob()
-            const reader = new FileReader()
-            const base64Image = await new Promise<string>((resolve) => {
-              reader.onloadend = () => {
-                const result = reader.result as string
-                resolve(result.split(',')[1])
-              }
-              reader.readAsDataURL(blob)
-            })
-            const mimeType = blob.type || 'image/jpeg'
-            parts.push({ inlineData: { data: base64Image, mimeType } })
-          } else {
-            // Placeholder for text-only meal in the parts sequence (Gemini needs order)
-            // Actually, if we use a single prompt with all descriptions, we don't need parts per image.
-            // But the current batch logic sends one image per part.
-            // For text-only meals in a batch, we can send a part that just says "This meal is a text-only description: [text]"
-            // However, the current prompt says "Analyzing [allDrafts.length] food images in order".
-            // Let's refine the batch prompt to support both.
-            parts.push({ text: `(Mahlzeit ohne Bild: "${meal.user_comment}")` })
-          }
-        }
-
-        const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
-        
-        const userContexts = allDrafts.map((m, i) => m.user_comment ? `Image ${i+1}: "${m.user_comment}"` : null).filter(Boolean)
-        const contextStr = userContexts.length > 0 ? `\n\nUSER INSTRUCTIONS PER IMAGE:\n${userContexts.join('\n')}\nPlease mathematically adjust your calorie and macronutrient estimations for the respective images based exactly on these specific notes!` : ''
-
-        const prompt = `
-          I am providing you with ${allDrafts.length} food images in order.
-          Analyze each food image individually and provide a nutritional breakdown for each one.
-          Respond entirely in ${targetLanguage}.
-          Return the output as a clean, raw JSON ARRAY of exactly ${allDrafts.length} objects.
-          The objects MUST be in the exact same order as the images provided.
-          IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${contextStr}
-        `
-
-        parts.unshift({ text: prompt })
-
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
+      // Fallback server sequentially
+      for (const meal of allDrafts) {
+        const aiResponse = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: parts
-            }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    foodItems: { type: "ARRAY", items: { type: "STRING" } },
-                    estimatedCalories: { type: "INTEGER" },
-                    macronutrients: {
-                      type: "OBJECT",
-                      properties: {
-                        protein: { type: "INTEGER", description: "Total protein in grams" },
-                        carbs: { type: "INTEGER", description: "Total carbs in grams" },
-                        fat: { type: "INTEGER", description: "Total fat in grams" }
-                      }
-                    },
-                    description: { type: "STRING" }
-                  }
-                }
-              }
-            }
-          })
+          body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
         })
-
-        if (!geminiRes.ok) throw new Error("Batch Gemini API Error")
-
-        const data = await geminiRes.json()
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!text) throw new Error("No response from AI")
-
-        const newAnalyses = JSON.parse(text)
-        if (!Array.isArray(newAnalyses) || newAnalyses.length !== allDrafts.length) {
-          throw new Error("Invalid output format from AI")
-        }
-
-        for (let i = 0; i < allDrafts.length; i++) {
-          const meal = allDrafts[i]
-          const analysis = newAnalyses[i]
-          const { error: dbError } = await supabase
-            .from('meals')
-            .update({ analysis_result: analysis })
-            .eq('id', meal.id)
-          if (dbError) throw dbError
-        }
-
-      } else {
-        // Fallback server sequentially
-        for (const meal of allDrafts) {
-          const aiResponse = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
-          })
-          if (!aiResponse.ok) throw new Error(dict.aiError)
-          const newAnalysis = await aiResponse.json()
-          const { error: dbError } = await supabase
-            .from('meals')
-            .update({ analysis_result: newAnalysis })
-            .eq('id', meal.id)
-          if (dbError) throw dbError
-        }
+        if (!aiResponse.ok) throw new Error(dict.aiError)
+        const newAnalysis = await aiResponse.json()
+        const { error: dbError } = await supabase
+          .from('meals')
+          .update({ analysis_result: newAnalysis })
+          .eq('id', meal.id)
+        if (dbError) throw dbError
       }
       router.refresh()
     } catch (err: any) {

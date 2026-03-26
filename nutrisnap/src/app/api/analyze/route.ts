@@ -1,12 +1,31 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/utils/supabase/server'
 import { GoogleGenAI } from '@google/genai'
 import { cookies } from 'next/headers'
 import { Locale } from '@/utils/i18n'
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
-
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies()
+    const supabase = await createClient()
+    
+    // Check for personal API key in profile
+    const { data: { user } } = await supabase.auth.getUser()
+    let apiKey = process.env.GEMINI_API_KEY
+    
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('gemini_api_key')
+        .eq('id', user.id)
+        .single()
+      
+      if (profile?.gemini_api_key) {
+        apiKey = profile.gemini_api_key
+      }
+    }
+
+    const ai = new GoogleGenAI({ apiKey: apiKey as string })
     const { base64Image, mimeType, imageUrl, userContext } = await req.json()
 
     let finalBase64 = base64Image
@@ -27,7 +46,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No image or text provided' }, { status: 400 })
     }
 
-    const cookieStore = await cookies()
     const locale = (cookieStore.get('NEXT_LOCALE')?.value || 'de') as Locale
     const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
     
