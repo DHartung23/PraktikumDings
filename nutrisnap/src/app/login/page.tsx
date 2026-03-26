@@ -72,16 +72,18 @@ export default async function LoginPage({
           <div className="mt-4 flex flex-col gap-3">
             <button
               formAction={login}
-              className="bg-emerald-600 hover:bg-emerald-700 transition-colors rounded-lg px-4 py-3 text-white font-semibold text-lg"
+              className="bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-[0.98] rounded-xl px-4 py-4 text-white font-bold text-lg shadow-lg shadow-emerald-100"
             >
-              Sign In
+              Anmelden
             </button>
-            <button
-              formAction={signup}
-              className="border-2 border-slate-200 hover:bg-slate-50 transition-colors rounded-lg px-4 py-3 text-slate-700 font-semibold text-lg"
-            >
-              Sign Up
-            </button>
+            <div className="text-center mt-2">
+              <p className="text-slate-500 text-sm font-medium">
+                Noch kein Konto?{' '}
+                <Link href="/signup" className="text-emerald-600 font-bold hover:underline">
+                  Jetzt registrieren
+                </Link>
+              </p>
+            </div>
           </div>
           {message && (
             <p className="mt-4 p-4 bg-emerald-50 text-emerald-800 text-center rounded-lg border border-emerald-100 font-medium">

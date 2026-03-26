@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash', // Using 2.0 flask as 2.5 is not a thing yet, 1.5 is old
       contents: [
         { role: 'user', parts }
       ],

@@ -25,6 +25,36 @@ describe('Telegram Webhook POST Handler', () => {
         process.env.NEXT_PUBLIC_SUPABASE_URL = 'test-url'
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'test-key'
 
+        // Set URL-aware fetch mock
+        ;(global.fetch as jest.Mock).mockImplementation((url: string) => {
+            if (url.includes('api.telegram.org')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({ ok: true })
+                })
+            }
+            if (url.includes('generativelanguage.googleapis.com')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        candidates: [{
+                            content: {
+                                parts: [{
+                                    text: JSON.stringify({
+                                        foodItems: ['Test Food'],
+                                        estimatedCalories: 100,
+                                        macronutrients: { protein: 5, carbs: 20, fat: 2 },
+                                        description: 'Mocked meal'
+                                    })
+                                }]
+                            }
+                        }]
+                    })
+                })
+            }
+            return Promise.reject(new Error(`Unhandled fetch call to: ${url}`))
+        })
+
         mockSingle = jest.fn()
         mockEqForUpdate = jest.fn().mockResolvedValue({ error: null })
 
@@ -37,6 +67,11 @@ describe('Telegram Webhook POST Handler', () => {
                 }),
                 update: jest.fn().mockReturnValue({
                     eq: mockEqForUpdate
+                }),
+                insert: jest.fn().mockReturnValue({
+                    select: jest.fn().mockReturnValue({
+                        single: jest.fn().mockResolvedValue({ data: { id: 'meal-123' }, error: null })
+                    })
                 })
             })
         };
@@ -109,6 +144,48 @@ describe('Telegram Webhook POST Handler', () => {
             'https://api.telegram.org/bottest-token/sendMessage',
             expect.objectContaining({
                 body: expect.stringContaining('noch nicht mit NutriSnap verknüpft')
+            })
+        )
+    })
+
+    it('processes text-only meal tracking for linked users', async () => {
+        mockSingle.mockResolvedValueOnce({ data: { id: 'user-123', gemini_api_key: 'user-key' } }) // Link check
+        
+        // Mock Gemini API response
+        ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+            json: async () => ({
+                candidates: [{
+                    content: {
+                        parts: [{
+                            text: JSON.stringify({
+                                foodItems: ['Apfel'],
+                                estimatedCalories: 95,
+                                macronutrients: { protein: 0, carbs: 25, fat: 0 },
+                                description: 'Ein frischer Apfel'
+                            })
+                        }]
+                    }
+                }]
+            })
+        })
+
+        const req = createMockRequest({
+            message: { chat: { id: 999 }, text: 'Ich habe einen Apfel gegessen' }
+        })
+        
+        await POST(req)
+
+        // Verify Gemini fetch was called with 2.5-flash
+        expect(global.fetch).toHaveBeenCalledWith(
+            expect.stringContaining('gemini-2.5-flash'),
+            expect.objectContaining({ method: 'POST' })
+        )
+
+        // Verify Telegram reply
+        expect(global.fetch).toHaveBeenCalledWith(
+            expect.stringContaining('sendMessage'),
+            expect.objectContaining({
+                body: expect.stringContaining('100 kcal')
             })
         )
     })
