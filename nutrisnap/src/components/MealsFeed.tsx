@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { calculateTDEE, calculateStepCalories, getMacroGoals } from '@/utils/tdee'
 import { saveDailySteps } from '@/app/profile/actions'
+import { parseMacro } from '@/utils/helpers'
 
 export interface AnalysisResult {
   foodItems?: string[];
@@ -112,86 +113,18 @@ function MealCard({ meal, dict, locale, isSelected, onToggleSelect }: { meal: Me
   const handleAnalyzeNow = async () => {
     setIsAnalyzing(true)
     try {
-      let newAnalysis;
-      const apiKey = localStorage.getItem('gemini_api_key')
+      // Always use server route for security (API key stays server-side)
+      const aiResponse = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
+      })
 
-      if (apiKey) {
-        // 1. Fetch image directly and convert to base64
-        const imgRes = await fetch(meal.image_url)
-        if (!imgRes.ok) throw new Error("Could not fetch image")
-        const blob = await imgRes.blob()
-        const reader = new FileReader()
-
-        const base64Image = await new Promise<string>((resolve) => {
-          reader.onloadend = () => {
-            const result = reader.result as string
-            resolve(result.split(',')[1])
-          }
-          reader.readAsDataURL(blob)
-        })
-        const mimeType = blob.type || 'image/jpeg'
-
-        // 2. Call Gemini API directly from browser
-        const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
-        const userContext = meal.user_comment ? `\n\nUSER INSTRUCTIONS FOR THIS MEAL: "${meal.user_comment}". Please mathematically adjust your calorie and macronutrient estimations based exactly on this context!` : ''
-        
-        const prompt = `
-          Analyze this food image and provide a nutritional breakdown. 
-          Respond entirely in ${targetLanguage}.
-          Return the output as a clean, raw JSON object.
-          IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${userContext}
-        `
-
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: [{ text: prompt }, { inlineData: { data: base64Image, mimeType } }]
-            }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: "OBJECT",
-                properties: {
-                  foodItems: { type: "ARRAY", items: { type: "STRING" } },
-                  estimatedCalories: { type: "INTEGER" },
-                  macronutrients: {
-                    type: "OBJECT",
-                    properties: {
-                      protein: { type: "INTEGER", description: "Total protein in grams" },
-                      carbs: { type: "INTEGER", description: "Total carbs in grams" },
-                      fat: { type: "INTEGER", description: "Total fat in grams" }
-                    }
-                  },
-                  description: { type: "STRING" }
-                }
-              }
-            }
-          })
-        })
-
-        if (!geminiRes.ok) {
-          const errData = await geminiRes.json()
-          throw new Error(errData.error?.message || 'Gemini API Error')
-        }
-
-        const data = await geminiRes.json()
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!text) throw new Error("No response from AI")
-        newAnalysis = JSON.parse(text)
-      } else {
-        // Fallback to our server route
-        const aiResponse = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
-        })
-
-        if (!aiResponse.ok) throw new Error(dict.aiError)
-        newAnalysis = await aiResponse.json()
+      if (!aiResponse.ok) {
+        const errData = await aiResponse.json()
+        throw new Error(errData.error || dict.aiError)
       }
+      const newAnalysis = await aiResponse.json()
 
       const { error: dbError } = await supabase
         .from('meals')
@@ -211,7 +144,13 @@ function MealCard({ meal, dict, locale, isSelected, onToggleSelect }: { meal: Me
   return (
     <div className={`bg-white rounded-2xl shadow-sm border ${isDraft ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200'} overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-300`}>
       <div className="h-48 w-full bg-slate-100 relative overflow-hidden shrink-0 border-b border-slate-100">
-        <img src={meal.image_url} alt="Meal" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
+        {meal.image_url ? (
+          <img src={meal.image_url} alt="Meal" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-400">
+            <MessageSquare className="w-12 h-12 opacity-50" />
+          </div>
+        )}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-2 py-1 rounded">{timeStr}</div>
         <button
           onClick={() => onToggleSelect(meal.id)}
@@ -300,11 +239,7 @@ function MealCard({ meal, dict, locale, isSelected, onToggleSelect }: { meal: Me
   )
 }
 
-function parseMacro(val: any): number {
-  if (!val) return 0;
-  const num = parseFloat(String(val).replace(/[^\d.]/g, ''));
-  return isNaN(num) ? 0 : num;
-}
+// parseMacro is now imported from @/utils/helpers
 
 // Helper to determine the dynamic color class of a macro widget
 function getMacroColors(type: 'kcal' | 'protein' | 'carbs' | 'fat', actual: number, goal: number) {
@@ -384,112 +319,23 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
   const handleAnalyzeAll = async () => {
     setIsAnalyzingAll(true)
     try {
-      const apiKey = localStorage.getItem('gemini_api_key')
-
-      if (apiKey) {
-        const parts: any[] = []
-        for (const meal of allDrafts) {
-          const imgRes = await fetch(meal.image_url)
-          if (!imgRes.ok) throw new Error("Could not fetch image")
-          const blob = await imgRes.blob()
-          const reader = new FileReader()
-          const base64Image = await new Promise<string>((resolve) => {
-            reader.onloadend = () => {
-              const result = reader.result as string
-              resolve(result.split(',')[1])
-            }
-            reader.readAsDataURL(blob)
-          })
-          const mimeType = blob.type || 'image/jpeg'
-          parts.push({ inlineData: { data: base64Image, mimeType } })
-        }
-
-        const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
-        
-        const userContexts = allDrafts.map((m, i) => m.user_comment ? `Image ${i+1}: "${m.user_comment}"` : null).filter(Boolean)
-        const contextStr = userContexts.length > 0 ? `\n\nUSER INSTRUCTIONS PER IMAGE:\n${userContexts.join('\n')}\nPlease mathematically adjust your calorie and macronutrient estimations for the respective images based exactly on these specific notes!` : ''
-
-        const prompt = `
-          I am providing you with ${allDrafts.length} food images in order.
-          Analyze each food image individually and provide a nutritional breakdown for each one.
-          Respond entirely in ${targetLanguage}.
-          Return the output as a clean, raw JSON ARRAY of exactly ${allDrafts.length} objects.
-          The objects MUST be in the exact same order as the images provided.
-          IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${contextStr}
-        `
-
-        parts.unshift({ text: prompt })
-
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      // Analyze all drafts sequentially through the secure server route
+      for (const meal of allDrafts) {
+        const aiResponse = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: parts
-            }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    foodItems: { type: "ARRAY", items: { type: "STRING" } },
-                    estimatedCalories: { type: "INTEGER" },
-                    macronutrients: {
-                      type: "OBJECT",
-                      properties: {
-                        protein: { type: "INTEGER", description: "Total protein in grams" },
-                        carbs: { type: "INTEGER", description: "Total carbs in grams" },
-                        fat: { type: "INTEGER", description: "Total fat in grams" }
-                      }
-                    },
-                    description: { type: "STRING" }
-                  }
-                }
-              }
-            }
-          })
+          body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
         })
-
-        if (!geminiRes.ok) throw new Error("Batch Gemini API Error")
-
-        const data = await geminiRes.json()
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!text) throw new Error("No response from AI")
-
-        const newAnalyses = JSON.parse(text)
-        if (!Array.isArray(newAnalyses) || newAnalyses.length !== allDrafts.length) {
-          throw new Error("Invalid output format from AI")
+        if (!aiResponse.ok) {
+          const errData = await aiResponse.json()
+          throw new Error(errData.error || dict.aiError)
         }
-
-        for (let i = 0; i < allDrafts.length; i++) {
-          const meal = allDrafts[i]
-          const analysis = newAnalyses[i]
-          const { error: dbError } = await supabase
-            .from('meals')
-            .update({ analysis_result: analysis })
-            .eq('id', meal.id)
-          if (dbError) throw dbError
-        }
-
-      } else {
-        // Fallback server sequentially
-        for (const meal of allDrafts) {
-          const aiResponse = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageUrl: meal.image_url })
-          })
-          if (!aiResponse.ok) throw new Error(dict.aiError)
-          const newAnalysis = await aiResponse.json()
-          const { error: dbError } = await supabase
-            .from('meals')
-            .update({ analysis_result: newAnalysis })
-            .eq('id', meal.id)
-          if (dbError) throw dbError
-        }
+        const newAnalysis = await aiResponse.json()
+        const { error: dbError } = await supabase
+          .from('meals')
+          .update({ analysis_result: newAnalysis })
+          .eq('id', meal.id)
+        if (dbError) throw dbError
       }
       router.refresh()
     } catch (err: any) {
@@ -533,7 +379,7 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
           <div>
             <h3 className="text-amber-900 font-bold">{dict.pendingAnalysis}</h3>
-            <p className="text-amber-700 text-sm">Du hast {allDrafts.length} Bilder, die noch nicht analysiert wurden.</p>
+            <p className="text-amber-700 text-sm">{allDrafts.length} {dict.pendingAnalysis}</p>
           </div>
           <button
             onClick={handleAnalyzeAll}

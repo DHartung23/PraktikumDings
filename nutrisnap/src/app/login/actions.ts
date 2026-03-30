@@ -29,9 +29,19 @@ export async function signup(formData: FormData) {
   const email = formData.get('email') as string
   const password = formData.get('password') as string
   const passwordConfirm = formData.get('password_confirm') as string
-  const displayName = formData.get('display_name') as string
+  // Sanitize display name
+  const rawName = (formData.get('display_name') as string || '').trim()
+  const displayName = rawName.slice(0, 100) // max 100 chars
+  if (!displayName) {
+    return redirect(`/signup?message=Bitte gib einen Namen ein`)
+  }
+
   const height = formData.get('height') as string
   const weight = formData.get('weight') as string
+
+  if (!password || password.length < 6) {
+    return redirect(`/signup?message=Passwort muss mindestens 6 Zeichen lang sein`)
+  }
 
   if (password !== passwordConfirm) {
     return redirect(`/signup?message=Passwörter stimmen nicht überein`)

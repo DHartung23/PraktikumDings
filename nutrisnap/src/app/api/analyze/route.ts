@@ -2,18 +2,24 @@ import { NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
 import { cookies } from 'next/headers'
 import { Locale } from '@/utils/i18n'
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+import { createClient } from '@/utils/supabase/server'
+import { GEMINI_MODEL } from '@/utils/ai-config'
 
 export async function POST(req: Request) {
   try {
+    // --- Auth check ---
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { base64Image, mimeType, imageUrl, userContext } = await req.json()
 
     let finalBase64 = base64Image
     let finalMimeType = mimeType || 'image/jpeg'
 
     if (imageUrl && !base64Image) {
-      // Fetch the image from URL
       const response = await fetch(imageUrl)
       if (!response.ok) {
         throw new Error("Failed to fetch image from URL")
@@ -26,6 +32,20 @@ export async function POST(req: Request) {
     if (!finalBase64 && !userContext) {
       return NextResponse.json({ error: 'No image or text provided' }, { status: 400 })
     }
+
+    // Use user's personal key if available, otherwise fallback to server key
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('gemini_api_key')
+      .eq('id', user.id)
+      .single()
+
+    const apiKey = profile?.gemini_api_key || process.env.GEMINI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ error: 'No Gemini API key configured' }, { status: 500 })
+    }
+
+    const ai = new GoogleGenAI({ apiKey })
 
     const cookieStore = await cookies()
     const locale = (cookieStore.get('NEXT_LOCALE')?.value || 'de') as Locale
@@ -51,7 +71,7 @@ export async function POST(req: Request) {
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash', // Using 2.0 flask as 2.5 is not a thing yet, 1.5 is old
+      model: GEMINI_MODEL,
       contents: [
         { role: 'user', parts }
       ],

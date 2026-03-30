@@ -177,7 +177,7 @@ describe('Telegram Webhook POST Handler', () => {
 
         // Verify Gemini fetch was called with 2.5-flash
         expect(global.fetch).toHaveBeenCalledWith(
-            expect.stringContaining('gemini-2.5-flash'),
+            expect.stringContaining('gemini-2.0-flash'),
             expect.objectContaining({ method: 'POST' })
         )
 

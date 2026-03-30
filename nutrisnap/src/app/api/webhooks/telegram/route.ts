@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GEMINI_MODEL, GEMINI_API_BASE } from '@/utils/ai-config'
 
 export async function POST(req: Request) {
    let body;
@@ -106,7 +107,7 @@ export async function POST(req: Request) {
              Return the output as a clean, raw JSON object.
              IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${caption ? `\nUSER INSTRUCTIONS FOR THIS MEAL: "${caption}". Please aggressively adjust your calculation based on exactly this context!` : ''}
          `
-         const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+         const aiRes = await fetch(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -146,7 +147,7 @@ export async function POST(req: Request) {
                    MEAL DESCRIPTION: "${text}"
                `
 
-               const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+               const aiRes = await fetch(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
                    method: 'POST',
                    headers: {'Content-Type': 'application/json'},
                    body: JSON.stringify({

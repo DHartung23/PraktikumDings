@@ -20,7 +20,7 @@ export default async function RootLayout({
   children: React.ReactNode
 }>) {
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const { data: { user } } = await supabase.auth.getUser()
   
   const cookieStore = await cookies()
   const locale = (cookieStore.get('NEXT_LOCALE')?.value || 'de') as Locale
@@ -29,7 +29,7 @@ export default async function RootLayout({
   return (
     <html lang={locale}>
       <body className={`${inter.className} min-h-screen bg-slate-50 flex flex-col`}>
-        {session && (
+        {user && (
           <header className="fixed top-0 w-full z-10 bg-white/80 backdrop-blur-md border-b border-slate-200">
             <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
               <Link href="/" className="font-bold text-xl text-emerald-600 tracking-tight">
@@ -49,7 +49,7 @@ export default async function RootLayout({
             </div>
           </header>
         )}
-        <main className={`flex-1 flex flex-col items-center w-full ${session ? 'pt-16' : ''}`}>
+        <main className={`flex-1 flex flex-col items-center w-full ${user ? 'pt-16' : ''}`}>
           {children}
         </main>
       </body>

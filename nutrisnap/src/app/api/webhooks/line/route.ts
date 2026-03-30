@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GEMINI_MODEL, GEMINI_API_BASE } from '@/utils/ai-config'
 
 export async function POST(req: Request) {
    let body;
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
              const base64Image = Buffer.from(imgBuffer).toString('base64')
              const prompt = `Analyze this food image. Provide nutritional breakdown in German. Return ONLY raw JSON object. IMPORTANT: estimatedCalories integer. protein, carbs, fat absolute integer in grams.`
              
-             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+             const aiRes = await fetch(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({

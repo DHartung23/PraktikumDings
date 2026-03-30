@@ -9,20 +9,31 @@ export async function updateProfile(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not logged in')
 
-  const height = parseFloat(formData.get('height') as string || '0')
-  const weight = parseFloat(formData.get('weight') as string || '0')
-  const age = parseInt(formData.get('age') as string || '0', 10)
-  const gender = formData.get('gender') as string
-  const gemini_api_key = formData.get('gemini_api_key') as string
+  // Only update fields that are actually present in the form
+  const updates: Record<string, any> = {}
+  
+  const heightStr = formData.get('height') as string | null
+  const weightStr = formData.get('weight') as string | null
+  const ageStr = formData.get('age') as string | null
+  const gender = formData.get('gender') as string | null
+  const gemini_api_key = formData.get('gemini_api_key') as string | null
+
+  if (heightStr !== null) updates.height = parseFloat(heightStr) || 0
+  if (weightStr !== null) updates.weight = parseFloat(weightStr) || 0
+  if (ageStr !== null) updates.age = parseInt(ageStr, 10) || 0
+  if (gender !== null) updates.gender = gender
+  if (gemini_api_key !== null) updates.gemini_api_key = gemini_api_key
+
+  if (Object.keys(updates).length === 0) return
 
   const { error } = await supabase
     .from('profiles')
-    .update({ height, weight, age, gender, gemini_api_key })
+    .update(updates)
     .eq('id', user.id)
 
   if (error) {
     // fallback if profile was deleted
-    await supabase.from('profiles').insert({ id: user.id, height, weight, age, gender, gemini_api_key })
+    await supabase.from('profiles').insert({ id: user.id, ...updates })
   }
 
   revalidatePath('/profile')

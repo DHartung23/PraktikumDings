@@ -7,13 +7,9 @@ import { updateProfile, updatePassword } from './actions'
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
 import GeminiKeyManager from '@/components/GeminiKeyManager'
 import MessengerManager from '@/components/MessengerManager'
+import { parseMacro } from '@/utils/helpers'
 
-// Helper to cleanly parse macro value
-function parseMacro(val: any): number {
-  if (!val) return 0;
-  const num = parseFloat(String(val).replace(/[^\d.]/g, ''));
-  return isNaN(num) ? 0 : num;
-}
+// parseMacro is now imported from @/utils/helpers
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -92,7 +88,7 @@ export default async function ProfilePage() {
             </div>
             <div>
               <p className="text-xs uppercase font-bold text-slate-400 mb-1">
-                Ø {avgKcal > 0 ? (isInDeficit ? dict.deficit : isSurplus ? dict.surplus : "Balance") : "Keine Daten"}
+                Ø {avgKcal > 0 ? (isInDeficit ? dict.deficit : isSurplus ? dict.surplus : "Balance") : dict.noDescription}
               </p>
               {avgKcal > 0 ? (
                 <p className="text-2xl font-bold text-slate-800 leading-none">

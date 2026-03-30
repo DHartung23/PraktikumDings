@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { login, signup } from './actions'
+import { login } from './actions'
 
 export const metadata = {
   title: 'Login - NutriSnap AI',

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { KeyRound, Check, Save } from 'lucide-react'
-import { updateProfile } from '@/app/profile/actions'
 
 interface Props {
   initialKey?: string
@@ -23,15 +22,7 @@ export default function GeminiKeyManager({ initialKey = '' }: Props) {
   const handleSave = async () => {
     try {
       setIsError(false)
-      const formData = new FormData()
-      formData.append('gemini_api_key', apiKey.trim())
-      
-      // We pass 0/empty for other fields to avoid overwriting with garbage, 
-      // but updateProfile currently updates all fields. 
-      // Ideally, we'd have a specific action for just the key.
-      // However, for now, we'll use a hidden form or a more specific action.
-      // Let's create a specific action in actions.ts for just the key to be clean.
-      
+
       const res = await fetch('/api/profile/key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -39,13 +30,6 @@ export default function GeminiKeyManager({ initialKey = '' }: Props) {
       })
 
       if (!res.ok) throw new Error('Failed to save')
-
-      // Also update local storage for client-side analysis
-      if (apiKey.trim() === '') {
-        localStorage.removeItem('gemini_api_key')
-      } else {
-        localStorage.setItem('gemini_api_key', apiKey.trim())
-      }
 
       setIsSaved(true)
       setTimeout(() => setIsSaved(false), 2000)
