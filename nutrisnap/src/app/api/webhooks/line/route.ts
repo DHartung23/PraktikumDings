@@ -91,12 +91,11 @@ export async function POST(req: Request) {
            const { data: insertedMeal, error: insertError } = await supabase.from('meals').insert({ user_id, image_url: publicUrl }).select('id').single()
            if (insertError) throw insertError
            
-           // Launch Artificial Server Analysis Route Trigger
-           // Note: Because LINE requires the replyToken within seconds, prolonged LLM inference here should ideally be decoupled. Line replies have short lifetimes.
            const geminiKey = process.env.GEMINI_API_KEY
            if (geminiKey) {
              const base64Image = Buffer.from(imgBuffer).toString('base64')
-             const prompt = `Analyze this food image. Provide nutritional breakdown in German. Return ONLY raw JSON object. IMPORTANT: estimatedCalories integer. protein, carbs, fat absolute integer in grams.`
+             const jsonSchema = `{"foodItems":["string"],"estimatedCalories":0,"description":"string","macronutrients":{"protein":0,"carbs":0,"fat":0}}`
+             const prompt = `Analyze this food image and provide a nutritional breakdown. Respond entirely in German. Return ONLY a raw JSON object matching this exact schema: ${jsonSchema}. Rules: foodItems=array of food names, estimatedCalories=integer kcal, description=short German description, macronutrients.protein/carbs/fat=integer grams never null.`
              
              const aiRes = await fetch(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
                 method: 'POST',

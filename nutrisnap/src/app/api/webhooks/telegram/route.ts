@@ -57,6 +57,8 @@ export async function POST(req: Request) {
 
    const user_id = profile.id
 
+   const jsonSchema = `{"foodItems":["string"],"estimatedCalories":0,"description":"string","macronutrients":{"protein":0,"carbs":0,"fat":0}}`
+
    // 2. Incoming Image & AI Processing Flow
    if (message.photo && message.photo.length > 0) {
       const photoObj = message.photo[message.photo.length - 1] // highest res layer
@@ -91,9 +93,8 @@ export async function POST(req: Request) {
             await supabase.from('meals').update({ user_comment: caption }).eq('id', insertedMeal.id)
          }
          
-         await sendMsg('🕒 In der Datenbank gesichert! Analysiere Nährwerte über Vertex AI...')
+         await sendMsg('🕒 In der Datenbank gesichert! Analysiere Nährwerte über Gemini AI...')
          
-         // Invoke Google Gemini remotely bypassing localhost origin domains
          const geminiKey = profile?.gemini_api_key || process.env.GEMINI_API_KEY
          if (!geminiKey) {
              await sendMsg('⚠️ Bild gespeichert! Für die automatische Analyse fehlt jedoch ein Gemini API Key (weder in deinem Profil noch auf dem Server hinterlegt).')
@@ -101,12 +102,8 @@ export async function POST(req: Request) {
          }
 
          const base64Image = Buffer.from(imgBuffer).toString('base64')
-         const prompt = `
-             Analyze this food image and provide a nutritional breakdown.
-             Respond entirely in German.
-             Return the output as a clean, raw JSON object.
-             IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${caption ? `\nUSER INSTRUCTIONS FOR THIS MEAL: "${caption}". Please aggressively adjust your calculation based on exactly this context!` : ''}
-         `
+         const prompt = `Analyze this food image and provide a nutritional breakdown. Respond entirely in German. Return ONLY a raw JSON object matching this exact schema: ${jsonSchema}. Rules: foodItems=array of food names, estimatedCalories=integer kcal, description=short German description, macronutrients.protein/carbs/fat=integer grams never null.${caption ? ` USER INSTRUCTIONS: "${caption}". Adjust calculations accordingly!` : ''}`
+
          const aiRes = await fetch(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -134,18 +131,11 @@ export async function POST(req: Request) {
            try {
                const geminiKey = profile?.gemini_api_key || process.env.GEMINI_API_KEY
                if (!geminiKey) {
-                   await sendMsg('⚠️ Analysiere fehlgeschlagen! Für die automatische Analyse fehlt ein Gemini API Key.')
+                   await sendMsg('⚠️ Analyse fehlgeschlagen! Für die automatische Analyse fehlt ein Gemini API Key.')
                    return NextResponse.json({ ok: true })
                }
 
-               const prompt = `
-                   Analyze this food description and provide a nutritional breakdown.
-                   Respond entirely in German.
-                   Return the output as a clean, raw JSON object.
-                   IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
-                   
-                   MEAL DESCRIPTION: "${text}"
-               `
+               const prompt = `Analyze this food description and provide a nutritional breakdown. Respond entirely in German. Return ONLY a raw JSON object matching this exact schema: ${jsonSchema}. Rules: foodItems=array of food names, estimatedCalories=integer kcal, description=short German description, macronutrients.protein/carbs/fat=integer grams never null. MEAL DESCRIPTION: "${text}"`
 
                const aiRes = await fetch(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${geminiKey}`, {
                    method: 'POST',

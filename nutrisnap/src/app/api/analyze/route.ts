@@ -52,18 +52,39 @@ export async function POST(req: Request) {
     const targetLanguage = locale === 'en' ? 'English' : locale === 'ja' ? 'Japanese' : 'German'
     
     const contextStr = userContext ? `\n\nUSER INSTRUCTIONS/DESCRIPTION: "${userContext}". Please mathematically adjust your calorie and macronutrient estimations based exactly on this context!` : ''
-    
-    const prompt = finalBase64 
+
+    const schema = `{
+  "foodItems": ["string"],
+  "estimatedCalories": 0,
+  "description": "string",
+  "macronutrients": {
+    "protein": 0,
+    "carbs": 0,
+    "fat": 0
+  }
+}`
+
+    const prompt = finalBase64
       ? `Analyze this food image and provide a nutritional breakdown.
-         Respond entirely in ${targetLanguage}.
-         Return the output as a clean, raw JSON object.
-         IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.${contextStr}`
+Respond entirely in ${targetLanguage}.
+You MUST return ONLY a raw JSON object that exactly matches this schema (no markdown, no extra fields):
+${schema}
+Rules:
+- foodItems: array of food names found in the image
+- estimatedCalories: integer in kcal
+- description: short description of the meal in ${targetLanguage}
+- macronutrients.protein, macronutrients.carbs, macronutrients.fat: integer grams, never null or undefined${contextStr}`
       : `Analyze this food description and provide a nutritional breakdown.
-         Respond entirely in ${targetLanguage}.
-         Return the output as a clean, raw JSON object.
-         IMPORTANT: estimatedCalories must be an integer (in kcal). protein, carbs, and fat must be integers representing the absolute amount in grams. Provide your best numeric estimate. Do not use words or strings for these values.
-         
-         DESCRIPTION: "${userContext}"`
+Respond entirely in ${targetLanguage}.
+You MUST return ONLY a raw JSON object that exactly matches this schema (no markdown, no extra fields):
+${schema}
+Rules:
+- foodItems: array of food names
+- estimatedCalories: integer in kcal
+- description: short description in ${targetLanguage}
+- macronutrients.protein, macronutrients.carbs, macronutrients.fat: integer grams, never null or undefined
+
+DESCRIPTION: "${userContext}"`
     
     const parts: any[] = [{ text: prompt }]
     if (finalBase64) {
