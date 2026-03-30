@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Flame, Beef, Droplet, Wheat, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Footprints, Trash2, CheckCircle2, Circle, MessageSquare, Edit2, Check } from 'lucide-react'
+import { Flame, Beef, Droplet, Wheat, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Footprints, Trash2, CheckCircle2, Circle, MessageSquare, Edit2, Check, RefreshCw } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { calculateTDEE, calculateStepCalories, getMacroGoals } from '@/utils/tdee'
@@ -262,6 +262,7 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
   const [isAnalyzingAll, setIsAnalyzingAll] = useState(false)
   const [selectedMealIds, setSelectedMealIds] = useState<Set<string>>(new Set())
   const [isDeletingBatch, setIsDeletingBatch] = useState(false)
+  const [isReanalyzingBatch, setIsReanalyzingBatch] = useState(false)
 
   const supabase = createClient()
   const router = useRouter()
@@ -302,6 +303,38 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
       alert("Error deleting meals")
     } finally {
       setIsDeletingBatch(false)
+    }
+  }
+
+  const handleBatchReanalyze = async () => {
+    if (selectedMealIds.size === 0) return
+    setIsReanalyzingBatch(true)
+    try {
+      const mealsToReanalyze = meals.filter(m => selectedMealIds.has(m.id))
+      for (const meal of mealsToReanalyze) {
+        const aiResponse = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageUrl: meal.image_url, userContext: meal.user_comment })
+        })
+        if (!aiResponse.ok) {
+          const errData = await aiResponse.json()
+          throw new Error(errData.error || dict.aiError)
+        }
+        const newAnalysis = await aiResponse.json()
+        const { error: dbError } = await supabase
+          .from('meals')
+          .update({ analysis_result: newAnalysis })
+          .eq('id', meal.id)
+        if (dbError) throw dbError
+      }
+      setSelectedMealIds(new Set())
+      router.refresh()
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || dict.aiError)
+    } finally {
+      setIsReanalyzingBatch(false)
     }
   }
 
@@ -364,9 +397,18 @@ export default function MealsFeed({ meals, profile, stats, dict, locale }: { mea
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-3.5 rounded-full shadow-2xl flex items-center gap-5 border border-slate-700 animate-in slide-in-from-bottom-5">
           <span className="font-semibold">{selectedMealIds.size} {locale === 'en' ? 'selected' : 'ausgewählt'}</span>
           <div className="w-px h-5 bg-slate-700"></div>
+          <button
+            onClick={handleBatchReanalyze}
+            disabled={isReanalyzingBatch || isDeletingBatch}
+            className="flex items-center text-indigo-400 hover:text-indigo-300 transition-colors font-bold disabled:opacity-50"
+          >
+            {isReanalyzingBatch ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+            {locale === 'en' ? 'Reevaluate' : 'Neu bewerten'}
+          </button>
+          <div className="w-px h-5 bg-slate-700"></div>
           <button 
             onClick={handleBatchDelete}
-            disabled={isDeletingBatch}
+            disabled={isDeletingBatch || isReanalyzingBatch}
             className="flex items-center text-red-400 hover:text-red-300 transition-colors font-bold disabled:opacity-50"
           >
             {isDeletingBatch ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
